@@ -406,9 +406,13 @@ function buildRevealMarkup(card, label, attributeKey, outcome, animateFlip) {
 
   const selectedLabel = getAttributeLabel(attributeKey);
   const selectedValue = formatStat(card[attributeKey]);
+  const outcomeLabel = outcome === "winner" ? "Winner" : outcome === "loser" ? "Runner Up" : "Tie";
   const selectedChip = `
     <div class="reveal-property-chip">
-      <span class="attribute-label">${escapeHtml(selectedLabel)}</span>
+      <div>
+        <span class="attribute-label">Selected Property</span>
+        <strong class="comparison-property-name">${escapeHtml(selectedLabel)}</strong>
+      </div>
       <span class="attribute-value">${escapeHtml(selectedValue)}</span>
     </div>
   `;
@@ -417,20 +421,31 @@ function buildRevealMarkup(card, label, attributeKey, outcome, animateFlip) {
     <article class="reveal-card reveal-${escapeHtml(outcome)} reveal-card-flip">
       <div class="reveal-card-inner is-flipped ${animateFlip ? "animate-flip" : ""}">
         <div class="reveal-face reveal-face-front">
-          <div class="reveal-card-backdrop"></div>
+          <div class="reveal-card-backdrop">
+            <span class="frame-seal">TFI Banisa</span>
+          </div>
           <p class="label">Hidden card</p>
           <h4>Reveal</h4>
         </div>
         <div class="reveal-face reveal-face-back">
           <div class="reveal-burst"></div>
-          ${card.image ? `<img class="overlay-photo" src="${escapeHtml(card.image)}" alt="${escapeHtml(card.name)}" />` : `<div class="card-image card-image-fallback">Photo not found</div>`}
-          <p class="label">${escapeHtml(label)}</p>
-          <h3>${escapeHtml(card.name)}</h3>
-          <p class="subtle">${escapeHtml(card.role)}</p>
-          ${selectedChip}
-          <p class="reveal-stat reveal-stat-active">
-            <strong>Selected Property:</strong> ${escapeHtml(selectedLabel)}
-          </p>
+          <div class="comparison-frame">
+            <div class="frame-topline">
+              <p class="label">${escapeHtml(label)}</p>
+              <span class="frame-outcome">${escapeHtml(outcomeLabel)}</span>
+            </div>
+            <div class="frame-photo-shell">
+              ${card.image ? `<img class="overlay-photo" src="${escapeHtml(card.image)}" alt="${escapeHtml(card.name)}" />` : `<div class="card-image card-image-fallback">Photo not found</div>`}
+            </div>
+            <div class="frame-copy">
+              <h3>${escapeHtml(card.name)}</h3>
+              <p class="subtle">${escapeHtml(card.role)}</p>
+            </div>
+            ${selectedChip}
+            <p class="reveal-stat reveal-stat-active">
+              <strong>Now comparing:</strong> ${escapeHtml(selectedLabel)}
+            </p>
+          </div>
         </div>
       </div>
     </article>

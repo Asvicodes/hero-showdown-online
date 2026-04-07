@@ -264,17 +264,6 @@
     "imdbStarmeter": 1300
   },
   {
-    "id": "manchu-vishnu",
-    "name": "Manchu Vishnu",
-    "role": "Hero",
-    "image": "",
-    "totalMovies": 20,
-    "hits": 10,
-    "flops": 10,
-    "heightCm": 185,
-    "imdbStarmeter": 1500
-  },
-  {
     "id": "allari-naresh",
     "name": "Allari Naresh",
     "role": "Hero",
