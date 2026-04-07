@@ -40,6 +40,8 @@ const session = {
   revealTimerId: null,
 };
 
+let audioContext = null;
+
 initialize();
 
 function initialize() {
@@ -314,7 +316,7 @@ function renderLastRound(lastRound) {
   elements.lastRoundPanel.innerHTML = `
     <p>${escapeHtml(lastRound.message)}</p>
     <div class="reveal-grid">
-      ${buildRevealMarkup(lastRound.selfCard, "Your round card", lastRound.attributeKey, getRevealOutcome(lastRound, "self"), false)}
+      ${buildRevealMarkup(lastRound.selfCard, "Your round card", lastRound.attributeKey, getRevealOutcome(lastRound, "self"), true)}
       ${buildRevealMarkup(lastRound.opponentCard, "Opponent round card", lastRound.attributeKey, getRevealOutcome(lastRound, "opponent"), true)}
     </div>
   `;
@@ -337,6 +339,7 @@ function buildRevealMarkup(card, label, attributeKey, outcome, shouldFlip) {
   `;
   const backFace = `
     <div class="reveal-face reveal-face-back">
+      <div class="reveal-burst"></div>
       ${imageMarkup}
       <p class="label">${escapeHtml(label)}</p>
       <h4>${escapeHtml(card.name)}</h4>
@@ -347,28 +350,10 @@ function buildRevealMarkup(card, label, attributeKey, outcome, shouldFlip) {
     </div>
   `;
 
-  if (!shouldFlip) {
-    return `
-      <article class="reveal-card reveal-${escapeHtml(outcome)}">
-        <div class="reveal-card-inner reveal-card-static">
-          <div class="reveal-face reveal-face-static">
-            ${imageMarkup}
-            <p class="label">${escapeHtml(label)}</p>
-            <h4>${escapeHtml(card.name)}</h4>
-            <p class="muted">${escapeHtml(card.role)}</p>
-            <p class="reveal-stat ${session.selectedAttributeKey === attributeKey ? "reveal-stat-active" : ""}">
-              <strong>${escapeHtml(getAttributeLabel(attributeKey))}:</strong> ${formatStat(card[attributeKey])}
-            </p>
-          </div>
-        </div>
-      </article>
-    `;
-  }
-
   return `
     <article class="reveal-card reveal-${escapeHtml(outcome)} ${shouldFlip ? "reveal-card-flip" : ""}">
       <div class="reveal-card-inner ${session.revealActive && shouldFlip ? "is-flipped" : ""}">
-        ${shouldFlip ? frontFace : ""}
+        ${frontFace}
         ${backFace}
       </div>
     </article>
@@ -479,6 +464,7 @@ function handleRoundTransition(state) {
   session.lastResolvedRoundKey = roundKey;
   session.selectedAttributeKey = state.lastRound.attributeKey;
   session.revealActive = true;
+  playRoundSound(state.lastRound);
   clearRevealTimer();
   session.revealTimerId = window.setTimeout(() => {
     session.revealActive = false;
@@ -527,4 +513,76 @@ function getRevealOutcome(lastRound, side) {
   }
 
   return "loser";
+}
+
+function playRoundSound(lastRound) {
+  if (!lastRound) {
+    return;
+  }
+
+  const outcome = getRevealOutcome(lastRound, "self");
+  if (outcome === "winner") {
+    playVictorySound();
+    return;
+  }
+
+  if (outcome === "loser") {
+    playDefeatSound();
+  }
+}
+
+function playVictorySound() {
+  const ctx = getAudioContext();
+  if (!ctx) {
+    return;
+  }
+
+  const now = ctx.currentTime;
+  playTone(ctx, 523.25, now, 0.12, "triangle", 0.07);
+  playTone(ctx, 659.25, now + 0.11, 0.12, "triangle", 0.08);
+  playTone(ctx, 783.99, now + 0.22, 0.2, "triangle", 0.09);
+}
+
+function playDefeatSound() {
+  const ctx = getAudioContext();
+  if (!ctx) {
+    return;
+  }
+
+  const now = ctx.currentTime;
+  playTone(ctx, 260.0, now, 0.14, "sine", 0.04);
+  playTone(ctx, 196.0, now + 0.12, 0.22, "sine", 0.05);
+}
+
+function getAudioContext() {
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) {
+    return null;
+  }
+
+  if (!audioContext) {
+    audioContext = new AudioContextCtor();
+  }
+
+  if (audioContext.state === "suspended") {
+    audioContext.resume().catch(() => {});
+  }
+
+  return audioContext;
+}
+
+function playTone(ctx, frequency, startAt, duration, type, gainValue) {
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, startAt);
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(gainValue, startAt + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+
+  oscillator.connect(gain);
+  gain.connect(ctx.destination);
+  oscillator.start(startAt);
+  oscillator.stop(startAt + duration + 0.03);
 }

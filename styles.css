@@ -488,11 +488,32 @@ input:focus {
 
 .reveal-face-back {
   transform: rotateY(180deg);
+  overflow: hidden;
 }
 
 .reveal-face-static {
   position: relative;
   transform: none;
+}
+
+.reveal-burst {
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(circle, rgba(255, 218, 86, 0.34) 0%, rgba(255, 218, 86, 0) 52%),
+    conic-gradient(
+      from 0deg,
+      rgba(255, 255, 255, 0.22) 0deg,
+      rgba(255, 255, 255, 0) 32deg,
+      rgba(255, 255, 255, 0.18) 65deg,
+      rgba(255, 255, 255, 0) 108deg,
+      rgba(255, 255, 255, 0.22) 180deg,
+      rgba(255, 255, 255, 0) 232deg,
+      rgba(255, 255, 255, 0.18) 290deg,
+      rgba(255, 255, 255, 0) 360deg
+    );
+  opacity: 0;
+  pointer-events: none;
 }
 
 .reveal-face-back img {
@@ -508,7 +529,15 @@ input:focus {
   animation: reveal-card-in 520ms ease both;
 }
 
+.round-reveal-active .reveal-card-flip .reveal-card-inner {
+  animation: card-flip-pop 760ms ease both;
+}
+
 .round-reveal-active .reveal-card:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.round-reveal-active .reveal-card:nth-child(2) .reveal-card-inner {
   animation-delay: 120ms;
 }
 
@@ -529,9 +558,18 @@ input:focus {
   background: linear-gradient(180deg, rgba(245, 255, 248, 0.96), rgba(230, 247, 236, 0.94));
 }
 
+.round-reveal-active .reveal-winner .reveal-face-back {
+  animation: winner-pulse 900ms ease 220ms both;
+}
+
+.round-reveal-active .reveal-winner .reveal-burst {
+  animation: winner-burst 950ms ease 180ms both;
+}
+
 .reveal-loser .reveal-face-back {
   box-shadow: 0 0 0 2px rgba(176, 62, 48, 0.16), 0 18px 34px rgba(176, 62, 48, 0.12);
   background: linear-gradient(180deg, rgba(255, 248, 246, 0.96), rgba(248, 234, 229, 0.94));
+  filter: saturate(0.88);
 }
 
 .reveal-tie .reveal-face-back {
@@ -571,6 +609,54 @@ input:focus {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes card-flip-pop {
+  0% {
+    transform: rotateY(0deg) scale(0.98);
+  }
+
+  55% {
+    transform: rotateY(180deg) scale(1.02);
+  }
+
+  100% {
+    transform: rotateY(180deg) scale(1);
+  }
+}
+
+@keyframes winner-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 2px rgba(39, 133, 77, 0.22), 0 20px 36px rgba(39, 133, 77, 0.18);
+  }
+
+  40% {
+    transform: scale(1.025);
+    box-shadow: 0 0 0 3px rgba(39, 133, 77, 0.28), 0 24px 44px rgba(39, 133, 77, 0.24);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 2px rgba(39, 133, 77, 0.22), 0 20px 36px rgba(39, 133, 77, 0.18);
+  }
+}
+
+@keyframes winner-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.7) rotate(0deg);
+  }
+
+  45% {
+    opacity: 0.9;
+    transform: scale(1) rotate(16deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.2) rotate(28deg);
   }
 }
 
