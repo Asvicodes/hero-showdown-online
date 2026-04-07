@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hero Showdown Online</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Manrope:wght@400;500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="./client.js"></script>
+  </head>
+  <body>
+    <main class="app-shell multiplayer-shell">
+      <section class="hero-panel">
+        <p class="eyebrow">2 Device Browser Game</p>
+        <h1>Hero Showdown Online</h1>
+        <p class="hero-copy">
+          Create a room on one device, join it from another, and battle with
+          private hero cards using your built-in offline deck.
+        </p>
+
+        <div class="sheet-guide">
+          <h2>How it works</h2>
+          <p>
+            One device starts the local Python server. Both devices then open
+            the same app URL, join the same room code, and play turn by turn.
+          </p>
+          <p class="subtle">
+            Each player only sees their own current card. The opponent card
+            stays hidden until a round finishes.
+          </p>
+        </div>
+
+        <div class="setup-grid">
+          <label class="field field-wide">
+            <span>Your Name</span>
+            <input id="playerName" type="text" placeholder="Enter your name" />
+          </label>
+          <label class="field">
+            <span>Room Code</span>
+            <input id="roomCodeInput" type="text" maxlength="6" placeholder="ABC123" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="createRoomBtn" class="primary-btn">Create Room</button>
+          <button id="joinRoomBtn" class="secondary-btn">Join Room</button>
+          <button id="startMatchBtn" class="secondary-btn">Start Match</button>
+          <button id="leaveRoomBtn" class="secondary-btn">Leave Room</button>
+        </div>
+
+        <div class="sheet-guide">
+          <h2>Connection</h2>
+          <p id="connectionHint">
+            Start the server first, then open this page in both devices.
+          </p>
+          <p id="statusMessage" class="subtle">
+            Waiting for you to create or join a room.
+          </p>
+        </div>
+      </section>
+
+      <section class="game-panel">
+        <div class="status-strip">
+          <div>
+            <p class="label">Room</p>
+            <h2 id="roomDisplay">Not connected</h2>
+          </div>
+          <div>
+            <p class="label">Turn</p>
+            <p id="turnLabel" class="round-message">Waiting for players</p>
+          </div>
+        </div>
+
+        <section class="duel-summary">
+          <div class="duel-party">
+            <p class="label">You</p>
+            <h3 id="selfName">Player</h3>
+            <p id="selfDeckCount" class="deck-count">0 cards</p>
+          </div>
+          <div class="vs-mark">VS</div>
+          <div class="duel-party">
+            <p class="label">Opponent</p>
+            <h3 id="opponentName">Waiting...</h3>
+            <p id="opponentDeckCount" class="deck-count">0 cards</p>
+          </div>
+        </section>
+
+        <section class="attribute-panel">
+          <div>
+            <p class="label">Your Card</p>
+            <h3>Choose a property</h3>
+            <p class="subtle">
+              Only your current card is visible. The opponent card is revealed
+              after you click a property.
+            </p>
+          </div>
+          <div class="card-play-area">
+            <div id="selfCard" class="battle-card empty-card">
+              <p>Your active card will appear here</p>
+            </div>
+            <div id="attributeButtons" class="attribute-buttons card-attributes"></div>
+          </div>
+        </section>
+
+        <section class="history-panel">
+          <div class="history-head">
+            <p class="label">Round Reveal</p>
+            <h3>Latest battle</h3>
+          </div>
+          <div id="lastRoundPanel" class="last-round-panel">
+            <p>No round played yet.</p>
+          </div>
+        </section>
+
+        <section class="history-panel">
+          <div class="history-head">
+            <p class="label">Match Feed</p>
+            <h3>Battle log</h3>
+          </div>
+          <ul id="historyList" class="history-list">
+            <li>No rounds played yet.</li>
+          </ul>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
