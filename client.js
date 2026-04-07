@@ -404,6 +404,15 @@ function buildRevealMarkup(card, label, attributeKey, outcome, animateFlip) {
     return `<article class="reveal-card"><p>No card data available.</p></article>`;
   }
 
+  const selectedLabel = getAttributeLabel(attributeKey);
+  const selectedValue = formatStat(card[attributeKey]);
+  const selectedChip = `
+    <div class="reveal-property-chip">
+      <span class="attribute-label">${escapeHtml(selectedLabel)}</span>
+      <span class="attribute-value">${escapeHtml(selectedValue)}</span>
+    </div>
+  `;
+
   return `
     <article class="reveal-card reveal-${escapeHtml(outcome)} reveal-card-flip">
       <div class="reveal-card-inner is-flipped ${animateFlip ? "animate-flip" : ""}">
@@ -418,8 +427,9 @@ function buildRevealMarkup(card, label, attributeKey, outcome, animateFlip) {
           <p class="label">${escapeHtml(label)}</p>
           <h3>${escapeHtml(card.name)}</h3>
           <p class="subtle">${escapeHtml(card.role)}</p>
+          ${selectedChip}
           <p class="reveal-stat reveal-stat-active">
-            <strong>${escapeHtml(getAttributeLabel(attributeKey))}:</strong> ${formatStat(card[attributeKey])}
+            <strong>Selected Property:</strong> ${escapeHtml(selectedLabel)}
           </p>
         </div>
       </div>
@@ -527,6 +537,8 @@ function playVictorySound() {
   playNoiseBurst(ctx, now + 0.12, 0.12, 0.03);
   playNoiseBurst(ctx, now + 0.32, 0.12, 0.025);
   playNoiseBurst(ctx, now + 0.52, 0.14, 0.02);
+  playBassHit(ctx, 130.81, now, 0.18, 0.045);
+  playBassHit(ctx, 164.81, now + 0.2, 0.18, 0.04);
 }
 
 function playDefeatSound() {
@@ -535,8 +547,10 @@ function playDefeatSound() {
     return;
   }
   const now = ctx.currentTime;
-  playTone(ctx, 260.0, now, 0.14, "sine", 0.04);
-  playTone(ctx, 196.0, now + 0.12, 0.22, "sine", 0.05);
+  playTone(ctx, 261.63, now, 0.1, "sine", 0.035);
+  playTone(ctx, 220.0, now + 0.1, 0.12, "sine", 0.04);
+  playTone(ctx, 174.61, now + 0.22, 0.26, "sawtooth", 0.035);
+  playBassHit(ctx, 87.31, now + 0.18, 0.3, 0.03);
 }
 
 function getAudioContext() {
@@ -591,6 +605,20 @@ function playNoiseBurst(ctx, startAt, duration, gainValue) {
   gain.connect(ctx.destination);
   source.start(startAt);
   source.stop(startAt + duration);
+}
+
+function playBassHit(ctx, frequency, startAt, duration, gainValue) {
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(frequency, startAt);
+  oscillator.frequency.exponentialRampToValueAtTime(Math.max(40, frequency * 0.72), startAt + duration);
+  gain.gain.setValueAtTime(gainValue, startAt);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+  oscillator.connect(gain);
+  gain.connect(ctx.destination);
+  oscillator.start(startAt);
+  oscillator.stop(startAt + duration + 0.03);
 }
 
 

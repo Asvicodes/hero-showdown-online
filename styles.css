@@ -540,6 +540,26 @@ input {
   background: rgba(24, 21, 17, 0.05);
 }
 
+.reveal-property-chip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(203, 79, 47, 0.16), rgba(223, 128, 47, 0.22));
+  border: 1px solid rgba(203, 79, 47, 0.2);
+}
+
+.reveal-property-chip .attribute-label {
+  color: var(--accent-strong);
+}
+
+.reveal-property-chip .attribute-value {
+  color: var(--accent-strong);
+}
+
 .reveal-stat-active {
   background: linear-gradient(135deg, rgba(203, 79, 47, 0.14), rgba(223, 128, 47, 0.2));
   border: 1px solid rgba(203, 79, 47, 0.2);
@@ -549,6 +569,16 @@ input {
   box-shadow: 0 0 0 2px rgba(39, 133, 77, 0.22), 0 22px 40px rgba(39, 133, 77, 0.18);
   background: linear-gradient(180deg, rgba(245, 255, 248, 0.98), rgba(230, 247, 236, 0.95));
   animation: winner-pulse 900ms ease 220ms both;
+}
+
+.reveal-winner .reveal-property-chip {
+  background: linear-gradient(135deg, rgba(39, 133, 77, 0.16), rgba(122, 207, 153, 0.22));
+  border-color: rgba(39, 133, 77, 0.24);
+}
+
+.reveal-winner .reveal-property-chip .attribute-label,
+.reveal-winner .reveal-property-chip .attribute-value {
+  color: var(--green);
 }
 
 .reveal-winner .reveal-burst {
@@ -567,6 +597,16 @@ input {
   box-shadow: 0 0 0 2px rgba(176, 62, 48, 0.16), 0 18px 34px rgba(176, 62, 48, 0.12);
   background: linear-gradient(180deg, rgba(255, 248, 246, 0.98), rgba(248, 234, 229, 0.95));
   filter: saturate(0.88);
+}
+
+.reveal-loser .reveal-property-chip {
+  background: linear-gradient(135deg, rgba(176, 62, 48, 0.14), rgba(230, 148, 137, 0.22));
+  border-color: rgba(176, 62, 48, 0.2);
+}
+
+.reveal-loser .reveal-property-chip .attribute-label,
+.reveal-loser .reveal-property-chip .attribute-value {
+  color: var(--red);
 }
 
 .reveal-tie .reveal-face-back {
