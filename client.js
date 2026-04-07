@@ -44,6 +44,7 @@ const session = {
   revealActive: false,
   pendingNext: false,
   renderedOverlayRoundKey: "",
+  nextRoundClicked: false,
 };
 
 let audioContext = null;
@@ -153,12 +154,36 @@ async function selectAttribute(attributeKey) {
   await refreshState();
 }
 
-function goToNextRound() {
-  session.revealActive = false;
-  session.pendingNext = false;
-  session.selectedAttributeKey = "";
-  session.renderedOverlayRoundKey = "";
-  renderState(session.state);
+async function goToNextRound() {
+  if (session.state?.status === "finished") {
+    session.revealActive = false;
+    session.pendingNext = false;
+    session.selectedAttributeKey = "";
+    session.renderedOverlayRoundKey = "";
+    renderState(session.state);
+    return;
+  }
+
+  if (!session.token || !session.state?.lastRound) {
+    return;
+  }
+
+  session.nextRoundClicked = true;
+  updateLobbyControls(session.state);
+
+  const response = await postJson("/api/rooms/next-round", {
+    roomCode: session.roomCode,
+    token: session.token,
+  });
+
+  if (!response.ok) {
+    session.nextRoundClicked = false;
+    updateLobbyControls(session.state);
+    setStatus(response.error || "Could not continue to the next round.");
+    return;
+  }
+
+  await refreshState();
 }
 
 function leaveRoom() {
@@ -188,6 +213,7 @@ function clearSession() {
   session.revealActive = false;
   session.pendingNext = false;
   session.renderedOverlayRoundKey = "";
+  session.nextRoundClicked = false;
   localStorage.removeItem(storageKey);
 }
 
@@ -264,7 +290,11 @@ function renderState(state) {
   if (state.status === "waiting") {
     setStatus("Room ready. Ask the second player to join with the room code.");
   } else if (state.status === "active") {
-    setStatus(session.pendingNext ? "Round complete. Tap next round." : state.isYourTurn ? "Your turn. Tap a stat on your card." : "Opponent is choosing a stat.");
+    if (session.pendingNext) {
+      setStatus(state.selfReadyNext ? "Waiting for the other player to tap next round." : "Round complete. Tap next round.");
+    } else {
+      setStatus(state.isYourTurn ? "Your turn. Tap a stat on your card." : "Opponent is choosing a stat.");
+    }
   } else if (state.status === "finished") {
     setStatus(state.winnerName === state.self.name ? "You won the match." : `${state.winnerName} won the match.`);
   }
@@ -283,6 +313,7 @@ function renderDisconnectedView() {
   elements.selfCard.innerHTML = "<p>Your active card will appear here.</p>";
   elements.roundOverlay.classList.remove("overlay-active");
   session.renderedOverlayRoundKey = "";
+  session.nextRoundClicked = false;
   updateLobbyControls(null);
 }
 
@@ -352,24 +383,30 @@ function renderRoundOverlay(lastRound) {
     elements.overlayTitle.textContent = session.state?.status === "finished" ? "Match Result" : "Round Result";
     elements.overlayMessage.textContent = lastRound.message;
     elements.overlayCards.innerHTML = `
-      ${buildRevealMarkup(lastRound.selfCard, "Your card", lastRound.attributeKey, getRevealOutcome(lastRound, "self"))}
-      ${buildRevealMarkup(lastRound.opponentCard, "Opponent card", lastRound.attributeKey, getRevealOutcome(lastRound, "opponent"))}
+      ${buildRevealMarkup(lastRound.selfCard, "Your card", lastRound.attributeKey, getRevealOutcome(lastRound, "self"), true)}
+      ${buildRevealMarkup(lastRound.opponentCard, "Opponent card", lastRound.attributeKey, getRevealOutcome(lastRound, "opponent"), true)}
     `;
     session.renderedOverlayRoundKey = roundKey;
   }
-  elements.nextRoundBtn.textContent = session.state?.status === "finished" ? "Close Result" : "Next Round";
+  if (session.state?.status === "finished") {
+    elements.nextRoundBtn.textContent = "Close Result";
+  } else if (session.state?.selfReadyNext) {
+    elements.nextRoundBtn.textContent = session.state?.opponentReadyNext ? "Loading next round..." : "Waiting for opponent...";
+  } else {
+    elements.nextRoundBtn.textContent = "Next Round";
+  }
   elements.roundOverlay.classList.add("overlay-active");
   elements.roundOverlay.setAttribute("aria-hidden", "false");
 }
 
-function buildRevealMarkup(card, label, attributeKey, outcome) {
+function buildRevealMarkup(card, label, attributeKey, outcome, animateFlip) {
   if (!card) {
     return `<article class="reveal-card"><p>No card data available.</p></article>`;
   }
 
   return `
     <article class="reveal-card reveal-${escapeHtml(outcome)} reveal-card-flip">
-      <div class="reveal-card-inner is-flipped">
+      <div class="reveal-card-inner is-flipped ${animateFlip ? "animate-flip" : ""}">
         <div class="reveal-face reveal-face-front">
           <div class="reveal-card-backdrop"></div>
           <p class="label">Hidden card</p>
@@ -392,7 +429,16 @@ function buildRevealMarkup(card, label, attributeKey, outcome) {
 
 function handleRoundTransition(state) {
   const roundKey = getRoundKey(state.lastRound);
-  if (!roundKey || roundKey === session.lastResolvedRoundKey) {
+  if (!roundKey) {
+    session.revealActive = false;
+    session.pendingNext = false;
+    session.selectedAttributeKey = "";
+    session.renderedOverlayRoundKey = "";
+    session.nextRoundClicked = false;
+    return;
+  }
+
+  if (roundKey === session.lastResolvedRoundKey) {
     return;
   }
 
@@ -400,6 +446,8 @@ function handleRoundTransition(state) {
   session.selectedAttributeKey = state.lastRound.attributeKey;
   session.revealActive = true;
   session.pendingNext = true;
+  session.nextRoundClicked = false;
+  session.renderedOverlayRoundKey = "";
   playRoundSound(state.lastRound);
 }
 
@@ -416,7 +464,7 @@ function updateLobbyControls(state) {
   elements.joinRoomBtn.disabled = !canCreateOrJoin;
   elements.leaveRoomBtn.disabled = !session.token;
   elements.startMatchBtn.disabled = !state || !state.canStart;
-  elements.nextRoundBtn.disabled = !session.pendingNext;
+  elements.nextRoundBtn.disabled = !session.pendingNext || (Boolean(state?.selfReadyNext) && state?.status !== "finished");
 }
 
 function getTurnMessage(state) {
@@ -544,6 +592,7 @@ function playNoiseBurst(ctx, startAt, duration, gainValue) {
   source.start(startAt);
   source.stop(startAt + duration);
 }
+
 
 function formatStat(value) {
   return Number.isInteger(value) ? String(value) : Number(value || 0).toFixed(2);

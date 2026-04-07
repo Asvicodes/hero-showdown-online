@@ -434,11 +434,11 @@ input {
   transform-style: preserve-3d;
 }
 
-.reveal-card-flip .reveal-card-inner {
+.reveal-card-flip .reveal-card-inner.animate-flip {
   animation: card-flip-pop 760ms ease both;
 }
 
-.reveal-card-flip:nth-child(2) .reveal-card-inner {
+.reveal-card-flip:nth-child(2) .reveal-card-inner.animate-flip {
   animation-delay: 120ms;
 }
 

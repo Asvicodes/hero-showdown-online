@@ -54,6 +54,9 @@ class HeroShowdownHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/rooms/select-attribute":
             self.handle_select_attribute(body)
             return
+        if parsed.path == "/api/rooms/next-round":
+            self.handle_next_round(body)
+            return
 
         self.send_json({"error": "Not found."}, HTTPStatus.NOT_FOUND)
 
@@ -83,6 +86,7 @@ class HeroShowdownHandler(BaseHTTPRequestHandler):
                 "history": [],
                 "last_round": None,
                 "winner_index": None,
+                "next_round_ready": [False, False],
                 "created_at": time.time(),
             }
 
@@ -133,6 +137,7 @@ class HeroShowdownHandler(BaseHTTPRequestHandler):
             room["history"] = ["Match started. Player 1 chooses the first attribute."]
             room["last_round"] = None
             room["winner_index"] = None
+            room["next_round_ready"] = [False, False]
 
         self.send_json({"ok": True})
 
@@ -196,6 +201,7 @@ class HeroShowdownHandler(BaseHTTPRequestHandler):
                 "cards": [current_card, other_card],
                 "turnPlayerIndex": current_index,
             }
+            room["next_round_ready"] = [False, False]
             room["history"] = [message] + room["history"][:11]
 
             if not room["decks"][0]:
@@ -211,6 +217,28 @@ class HeroShowdownHandler(BaseHTTPRequestHandler):
                 ] + room["history"][:11]
 
         self.send_json({"ok": True})
+
+    def handle_next_round(self, body):
+        room, player_index = self.require_room_and_player(body)
+        if room is None:
+            return
+
+        with ROOM_LOCK:
+            if not room["last_round"]:
+                self.send_json({"error": "No round is waiting for confirmation."}, HTTPStatus.CONFLICT)
+                return
+
+            room["next_round_ready"][player_index] = True
+            all_ready = all(
+                room["next_round_ready"][index]
+                for index in range(min(len(room["players"]), 2))
+            )
+
+            if all_ready and room["status"] == "active":
+                room["last_round"] = None
+                room["next_round_ready"] = [False, False]
+
+            self.send_json({"ok": True, "allReady": all_ready})
 
     def handle_room_state(self, parsed):
         query = parse_qs(parsed.query)
@@ -288,6 +316,8 @@ def build_player_state(room, player_index):
         "status": room["status"],
         "canStart": player_index == 0 and room["status"] == "waiting" and len(room["players"]) == 2,
         "isYourTurn": room["status"] == "active" and room["current_turn"] == player_index,
+        "selfReadyNext": room.get("next_round_ready", [False, False])[player_index],
+        "opponentReadyNext": room.get("next_round_ready", [False, False])[opponent_index] if len(room["players"]) > opponent_index else False,
         "self": {
             "name": self_player["name"],
             "deckCount": len(room["decks"][player_index]),
