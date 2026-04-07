@@ -352,7 +352,7 @@ function buildRevealMarkup(card, label, attributeKey, outcome, shouldFlip) {
 
   return `
     <article class="reveal-card reveal-${escapeHtml(outcome)} ${shouldFlip ? "reveal-card-flip" : ""}">
-      <div class="reveal-card-inner ${session.revealActive && shouldFlip ? "is-flipped" : ""}">
+      <div class="reveal-card-inner ${shouldFlip ? "is-flipped" : ""}">
         ${frontFace}
         ${backFace}
       </div>
@@ -540,7 +540,9 @@ function playVictorySound() {
   const now = ctx.currentTime;
   playTone(ctx, 523.25, now, 0.12, "triangle", 0.07);
   playTone(ctx, 659.25, now + 0.11, 0.12, "triangle", 0.08);
-  playTone(ctx, 783.99, now + 0.22, 0.2, "triangle", 0.09);
+  playTone(ctx, 783.99, now + 0.22, 0.18, "triangle", 0.09);
+  playTone(ctx, 1046.5, now + 0.34, 0.24, "triangle", 0.1);
+  playTone(ctx, 1318.51, now + 0.48, 0.28, "triangle", 0.08);
 }
 
 function playDefeatSound() {
