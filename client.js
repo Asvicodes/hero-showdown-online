@@ -48,6 +48,7 @@ const session = {
 };
 
 let audioContext = null;
+let audioUnlocked = false;
 
 initialize();
 
@@ -64,8 +65,9 @@ function attachEvents() {
   elements.joinRoomBtn.addEventListener("click", joinRoom);
   elements.startMatchBtn.addEventListener("click", startMatch);
   elements.leaveRoomBtn.addEventListener("click", leaveRoom);
-  elements.backToLobbyBtn.addEventListener("click", showLobbyPage);
+  elements.backToLobbyBtn.addEventListener("click", returnToLobby);
   elements.nextRoundBtn.addEventListener("click", goToNextRound);
+  window.addEventListener("pointerdown", unlockAudio, { passive: true });
 }
 
 function updateConnectionHint() {
@@ -192,6 +194,12 @@ function leaveRoom() {
   setStatus("You left the room.");
 }
 
+function returnToLobby() {
+  clearSession();
+  renderDisconnectedView();
+  setStatus("Back in the lobby. Create or join a room for a new game.");
+}
+
 function showLobbyPage() {
   const shouldStayInGame = Boolean(session.state && (session.state.status === "active" || session.pendingNext));
   elements.lobbyPage.classList.toggle("page-active", !shouldStayInGame);
@@ -214,6 +222,7 @@ function clearSession() {
   session.pendingNext = false;
   session.renderedOverlayRoundKey = "";
   session.nextRoundClicked = false;
+  elements.roomCodeInput.value = "";
   localStorage.removeItem(storageKey);
 }
 
@@ -380,8 +389,10 @@ function renderRoundOverlay(lastRound) {
 
   const roundKey = getRoundKey(lastRound);
   if (session.renderedOverlayRoundKey !== roundKey) {
-    elements.overlayTitle.textContent = session.state?.status === "finished" ? "Match Result" : "Round Result";
-    elements.overlayMessage.textContent = lastRound.message;
+    elements.overlayTitle.textContent = session.state?.status === "finished"
+      ? `${session.state?.winnerName || "Winner"} Wins TFI Banisa`
+      : "Round Result";
+    elements.overlayMessage.textContent = buildOverlayMessage(lastRound);
     elements.overlayCards.innerHTML = `
       ${buildRevealMarkup(lastRound.selfCard, "Your card", lastRound.attributeKey, getRevealOutcome(lastRound, "self"), true)}
       ${buildRevealMarkup(lastRound.opponentCard, "Opponent card", lastRound.attributeKey, getRevealOutcome(lastRound, "opponent"), true)}
@@ -407,6 +418,7 @@ function buildRevealMarkup(card, label, attributeKey, outcome, animateFlip) {
   const selectedLabel = getAttributeLabel(attributeKey);
   const selectedValue = formatStat(card[attributeKey]);
   const outcomeLabel = outcome === "winner" ? "Winner" : outcome === "loser" ? "Runner Up" : "Tie";
+  const comparisonLine = buildComparisonLine(card, attributeKey, outcome);
   const selectedChip = `
     <div class="reveal-property-chip">
       <div>
@@ -443,7 +455,7 @@ function buildRevealMarkup(card, label, attributeKey, outcome, animateFlip) {
             </div>
             ${selectedChip}
             <p class="reveal-stat reveal-stat-active">
-              <strong>Now comparing:</strong> ${escapeHtml(selectedLabel)}
+              <strong>Comparison:</strong> ${escapeHtml(comparisonLine)}
             </p>
           </div>
         </div>
@@ -582,6 +594,18 @@ function getAudioContext() {
   return audioContext;
 }
 
+function unlockAudio() {
+  if (audioUnlocked) {
+    return;
+  }
+  const ctx = getAudioContext();
+  if (!ctx) {
+    return;
+  }
+  audioUnlocked = true;
+  playTone(ctx, 220, ctx.currentTime, 0.01, "sine", 0.0001);
+}
+
 function playTone(ctx, frequency, startAt, duration, type, gainValue) {
   const oscillator = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -639,6 +663,33 @@ function playBassHit(ctx, frequency, startAt, duration, gainValue) {
 
 function formatStat(value) {
   return Number.isInteger(value) ? String(value) : Number(value || 0).toFixed(2);
+}
+
+function buildComparisonLine(card, attributeKey, outcome) {
+  const lastRound = session.state?.lastRound;
+  if (!lastRound) {
+    return getAttributeLabel(attributeKey);
+  }
+
+  const currentValue = formatStat(card?.[attributeKey]);
+  const opponentCard = card?.name === lastRound.selfCard?.name ? lastRound.opponentCard : lastRound.selfCard;
+  const opponentValue = formatStat(opponentCard?.[attributeKey]);
+  const verdict =
+    outcome === "winner"
+      ? "beats"
+      : outcome === "loser"
+        ? "falls to"
+        : "ties with";
+
+  return `${getAttributeLabel(attributeKey)} ${currentValue} ${verdict} ${opponentValue}`;
+}
+
+function buildOverlayMessage(lastRound) {
+  const winnerName = session.state?.winnerName;
+  if (session.state?.status === "finished" && winnerName) {
+    return `${lastRound.message} ${winnerName} wins the match.`;
+  }
+  return lastRound.message;
 }
 
 function setStatus(message) {
