@@ -43,6 +43,7 @@ const session = {
   lastResolvedRoundKey: "",
   revealActive: false,
   pendingNext: false,
+  renderedOverlayRoundKey: "",
 };
 
 let audioContext = null;
@@ -156,6 +157,7 @@ function goToNextRound() {
   session.revealActive = false;
   session.pendingNext = false;
   session.selectedAttributeKey = "";
+  session.renderedOverlayRoundKey = "";
   renderState(session.state);
 }
 
@@ -185,6 +187,7 @@ function clearSession() {
   session.lastResolvedRoundKey = "";
   session.revealActive = false;
   session.pendingNext = false;
+  session.renderedOverlayRoundKey = "";
   localStorage.removeItem(storageKey);
 }
 
@@ -279,6 +282,7 @@ function renderDisconnectedView() {
   elements.selfCard.className = "player-card empty-card";
   elements.selfCard.innerHTML = "<p>Your active card will appear here.</p>";
   elements.roundOverlay.classList.remove("overlay-active");
+  session.renderedOverlayRoundKey = "";
   updateLobbyControls(null);
 }
 
@@ -339,15 +343,20 @@ function renderRoundOverlay(lastRound) {
   if (!lastRound || !session.pendingNext) {
     elements.roundOverlay.classList.remove("overlay-active");
     elements.roundOverlay.setAttribute("aria-hidden", "true");
+    session.renderedOverlayRoundKey = "";
     return;
   }
 
-  elements.overlayTitle.textContent = session.state?.status === "finished" ? "Match Result" : "Round Result";
-  elements.overlayMessage.textContent = lastRound.message;
-  elements.overlayCards.innerHTML = `
-    ${buildRevealMarkup(lastRound.selfCard, "Your card", lastRound.attributeKey, getRevealOutcome(lastRound, "self"))}
-    ${buildRevealMarkup(lastRound.opponentCard, "Opponent card", lastRound.attributeKey, getRevealOutcome(lastRound, "opponent"))}
-  `;
+  const roundKey = getRoundKey(lastRound);
+  if (session.renderedOverlayRoundKey !== roundKey) {
+    elements.overlayTitle.textContent = session.state?.status === "finished" ? "Match Result" : "Round Result";
+    elements.overlayMessage.textContent = lastRound.message;
+    elements.overlayCards.innerHTML = `
+      ${buildRevealMarkup(lastRound.selfCard, "Your card", lastRound.attributeKey, getRevealOutcome(lastRound, "self"))}
+      ${buildRevealMarkup(lastRound.opponentCard, "Opponent card", lastRound.attributeKey, getRevealOutcome(lastRound, "opponent"))}
+    `;
+    session.renderedOverlayRoundKey = roundKey;
+  }
   elements.nextRoundBtn.textContent = session.state?.status === "finished" ? "Close Result" : "Next Round";
   elements.roundOverlay.classList.add("overlay-active");
   elements.roundOverlay.setAttribute("aria-hidden", "false");
@@ -460,11 +469,16 @@ function playVictorySound() {
     return;
   }
   const now = ctx.currentTime;
-  playTone(ctx, 523.25, now, 0.12, "triangle", 0.07);
-  playTone(ctx, 659.25, now + 0.1, 0.12, "triangle", 0.08);
-  playTone(ctx, 783.99, now + 0.2, 0.18, "triangle", 0.09);
-  playTone(ctx, 1046.5, now + 0.32, 0.24, "triangle", 0.1);
-  playTone(ctx, 1318.51, now + 0.46, 0.3, "triangle", 0.08);
+  playTone(ctx, 523.25, now, 0.12, "triangle", 0.06);
+  playTone(ctx, 659.25, now + 0.08, 0.12, "triangle", 0.07);
+  playTone(ctx, 783.99, now + 0.16, 0.16, "triangle", 0.08);
+  playTone(ctx, 1046.5, now + 0.28, 0.18, "triangle", 0.1);
+  playTone(ctx, 1318.51, now + 0.38, 0.24, "triangle", 0.11);
+  playTone(ctx, 1567.98, now + 0.48, 0.28, "triangle", 0.08);
+  playTone(ctx, 2093.0, now + 0.58, 0.3, "sine", 0.05);
+  playNoiseBurst(ctx, now + 0.12, 0.12, 0.03);
+  playNoiseBurst(ctx, now + 0.32, 0.12, 0.025);
+  playNoiseBurst(ctx, now + 0.52, 0.14, 0.02);
 }
 
 function playDefeatSound() {
@@ -503,6 +517,32 @@ function playTone(ctx, frequency, startAt, duration, type, gainValue) {
   gain.connect(ctx.destination);
   oscillator.start(startAt);
   oscillator.stop(startAt + duration + 0.03);
+}
+
+function playNoiseBurst(ctx, startAt, duration, gainValue) {
+  const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * duration));
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+
+  for (let index = 0; index < bufferSize; index += 1) {
+    data[index] = (Math.random() * 2 - 1) * (1 - index / bufferSize);
+  }
+
+  const source = ctx.createBufferSource();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+
+  source.buffer = buffer;
+  filter.type = "highpass";
+  filter.frequency.setValueAtTime(1200, startAt);
+  gain.gain.setValueAtTime(gainValue, startAt);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  source.start(startAt);
+  source.stop(startAt + duration);
 }
 
 function formatStat(value) {
