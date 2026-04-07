@@ -9,12 +9,16 @@ const ATTRIBUTES = [
 const storageKey = "hero-showdown-session";
 
 const elements = {
+  lobbyPage: document.getElementById("lobbyPage"),
+  gamePage: document.getElementById("gamePage"),
   playerName: document.getElementById("playerName"),
   roomCodeInput: document.getElementById("roomCodeInput"),
   createRoomBtn: document.getElementById("createRoomBtn"),
   joinRoomBtn: document.getElementById("joinRoomBtn"),
   startMatchBtn: document.getElementById("startMatchBtn"),
   leaveRoomBtn: document.getElementById("leaveRoomBtn"),
+  backToLobbyBtn: document.getElementById("backToLobbyBtn"),
+  nextRoundBtn: document.getElementById("nextRoundBtn"),
   connectionHint: document.getElementById("connectionHint"),
   statusMessage: document.getElementById("statusMessage"),
   roomDisplay: document.getElementById("roomDisplay"),
@@ -24,9 +28,10 @@ const elements = {
   selfCard: document.getElementById("selfCard"),
   opponentName: document.getElementById("opponentName"),
   opponentDeckCount: document.getElementById("opponentDeckCount"),
-  attributeButtons: document.getElementById("attributeButtons"),
-  lastRoundPanel: document.getElementById("lastRoundPanel"),
-  historyList: document.getElementById("historyList"),
+  roundOverlay: document.getElementById("roundOverlay"),
+  overlayTitle: document.getElementById("overlayTitle"),
+  overlayMessage: document.getElementById("overlayMessage"),
+  overlayCards: document.getElementById("overlayCards"),
 };
 
 const session = {
@@ -37,7 +42,7 @@ const session = {
   selectedAttributeKey: "",
   lastResolvedRoundKey: "",
   revealActive: false,
-  revealTimerId: null,
+  pendingNext: false,
 };
 
 let audioContext = null;
@@ -45,10 +50,10 @@ let audioContext = null;
 initialize();
 
 function initialize() {
-  renderAttributeButtons();
   attachEvents();
   restoreSession();
   updateConnectionHint();
+  renderDisconnectedView();
   startPolling();
 }
 
@@ -57,34 +62,20 @@ function attachEvents() {
   elements.joinRoomBtn.addEventListener("click", joinRoom);
   elements.startMatchBtn.addEventListener("click", startMatch);
   elements.leaveRoomBtn.addEventListener("click", leaveRoom);
-}
-
-function renderAttributeButtons() {
-  elements.attributeButtons.innerHTML = "";
-
-  ATTRIBUTES.forEach((attribute) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = attribute.label;
-    button.disabled = true;
-    button.addEventListener("click", () => selectAttribute(attribute.key));
-    elements.attributeButtons.appendChild(button);
-  });
+  elements.backToLobbyBtn.addEventListener("click", showLobbyPage);
+  elements.nextRoundBtn.addEventListener("click", goToNextRound);
 }
 
 function updateConnectionHint() {
-  elements.connectionHint.textContent =
-    `Open this app on both devices using ${window.location.origin}.`;
+  elements.connectionHint.textContent = `Open this app on both devices using ${window.location.origin}.`;
 }
 
 function getPlayerName() {
-  const value = elements.playerName.value.trim();
-  return value || "Player";
+  return elements.playerName.value.trim() || "Player";
 }
 
 async function createRoom() {
   const response = await postJson("/api/rooms/create", { playerName: getPlayerName() });
-
   if (!response.ok) {
     setStatus(response.error || "Could not create room.");
     return;
@@ -138,12 +129,12 @@ async function startMatch() {
 }
 
 async function selectAttribute(attributeKey) {
-  if (!session.token) {
+  if (!session.token || !session.state || session.pendingNext) {
     return;
   }
 
   session.selectedAttributeKey = attributeKey;
-  updateControls(session.state, getDisplayedSelfCard());
+  renderOwnCard(getDisplayedSelfCard());
 
   const response = await postJson("/api/rooms/select-attribute", {
     roomCode: session.roomCode,
@@ -153,7 +144,7 @@ async function selectAttribute(attributeKey) {
 
   if (!response.ok) {
     session.selectedAttributeKey = "";
-    updateControls(session.state, getDisplayedSelfCard());
+    renderOwnCard(getDisplayedSelfCard());
     setStatus(response.error || "Could not play that round.");
     return;
   }
@@ -161,10 +152,23 @@ async function selectAttribute(attributeKey) {
   await refreshState();
 }
 
+function goToNextRound() {
+  session.revealActive = false;
+  session.pendingNext = false;
+  session.selectedAttributeKey = "";
+  renderState(session.state);
+}
+
 function leaveRoom() {
   clearSession();
   renderDisconnectedView();
   setStatus("You left the room.");
+}
+
+function showLobbyPage() {
+  const shouldStayInGame = Boolean(session.state && (session.state.status === "active" || session.pendingNext));
+  elements.lobbyPage.classList.toggle("page-active", !shouldStayInGame);
+  elements.gamePage.classList.toggle("page-active", shouldStayInGame);
 }
 
 function setSession(roomCode, token) {
@@ -180,7 +184,7 @@ function clearSession() {
   session.selectedAttributeKey = "";
   session.lastResolvedRoundKey = "";
   session.revealActive = false;
-  clearRevealTimer();
+  session.pendingNext = false;
   localStorage.removeItem(storageKey);
 }
 
@@ -204,16 +208,12 @@ function startPolling() {
     clearInterval(session.pollId);
   }
 
-  session.pollId = setInterval(() => {
-    refreshState();
-  }, 1500);
-
+  session.pollId = window.setInterval(refreshState, 1500);
   refreshState();
 }
 
 async function refreshState() {
   if (!session.roomCode || !session.token) {
-    updateControls(null);
     return;
   }
 
@@ -239,182 +239,270 @@ async function refreshState() {
 }
 
 function renderState(state) {
+  if (!state) {
+    renderDisconnectedView();
+    return;
+  }
+
   handleRoundTransition(state);
+  showRelevantPage(state);
 
   elements.roomDisplay.textContent = state.roomCode;
   elements.selfName.textContent = state.self.name;
   elements.selfDeckCount.textContent = `${state.self.deckCount} cards`;
-  elements.opponentName.textContent = state.opponent.name || "Waiting for opponent";
+  elements.opponentName.textContent = state.opponent.name || "Waiting...";
   elements.opponentDeckCount.textContent = `${state.opponent.deckCount} cards`;
   elements.turnLabel.textContent = getTurnMessage(state);
 
   renderOwnCard(getDisplayedSelfCard());
-  renderLastRound(state.lastRound);
-  renderHistory(state.history);
-  updateControls(state, getDisplayedSelfCard());
+  renderRoundOverlay(state.lastRound);
+  updateLobbyControls(state);
 
   if (state.status === "waiting") {
     setStatus("Room ready. Ask the second player to join with the room code.");
   } else if (state.status === "active") {
-    setStatus(state.isYourTurn ? "Your turn. Pick an attribute." : "Opponent is choosing an attribute.");
+    setStatus(session.pendingNext ? "Round complete. Tap next round." : state.isYourTurn ? "Your turn. Tap a stat on your card." : "Opponent is choosing a stat.");
   } else if (state.status === "finished") {
     setStatus(state.winnerName === state.self.name ? "You won the match." : `${state.winnerName} won the match.`);
   }
 }
 
 function renderDisconnectedView() {
+  elements.lobbyPage.classList.add("page-active");
+  elements.gamePage.classList.remove("page-active");
   elements.roomDisplay.textContent = "Not connected";
   elements.turnLabel.textContent = "Waiting for players";
   elements.selfName.textContent = "Player";
   elements.selfDeckCount.textContent = "0 cards";
   elements.opponentName.textContent = "Waiting...";
   elements.opponentDeckCount.textContent = "0 cards";
-  elements.selfCard.className = "battle-card empty-card";
-  elements.selfCard.innerHTML = "<p>Your active card will appear here</p>";
-  elements.lastRoundPanel.innerHTML = "<p>No round played yet.</p>";
-  elements.historyList.innerHTML = "<li>No rounds played yet.</li>";
-  session.selectedAttributeKey = "";
-  updateControls(null, null);
+  elements.selfCard.className = "player-card empty-card";
+  elements.selfCard.innerHTML = "<p>Your active card will appear here.</p>";
+  elements.roundOverlay.classList.remove("overlay-active");
+  updateLobbyControls(null);
+}
+
+function showRelevantPage(state) {
+  const showGame = state.status === "active" || state.status === "finished" || session.pendingNext;
+  elements.lobbyPage.classList.toggle("page-active", !showGame);
+  elements.gamePage.classList.toggle("page-active", showGame);
 }
 
 function renderOwnCard(card) {
   if (!card) {
-    elements.selfCard.className = "battle-card empty-card";
-    elements.selfCard.innerHTML = "<p>No cards left</p>";
+    elements.selfCard.className = "player-card empty-card";
+    elements.selfCard.innerHTML = "<p>No cards left.</p>";
     return;
   }
 
-  elements.selfCard.className = "battle-card card-ready";
-  elements.selfCard.innerHTML = buildCardMarkup(card, `${card.role} - Your active card`);
-}
-
-function buildCardMarkup(card, subtitle) {
-  const imageMarkup = card.image
-    ? `<img class="card-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(card.name)}" />`
-    : `<div class="card-image card-image-fallback">Photo not found</div>`;
-
-  return `
-    ${imageMarkup}
-    <div class="card-header">
-      <div>
-        <h4>${escapeHtml(card.name)}</h4>
-        <p class="card-role">${escapeHtml(subtitle)}</p>
+  const canPick = Boolean(session.state && session.state.status === "active" && session.state.isYourTurn && !session.pendingNext);
+  elements.selfCard.className = "player-card card-live";
+  elements.selfCard.innerHTML = `
+    ${card.image ? `<img class="card-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(card.name)}" />` : `<div class="card-image card-image-fallback">Photo not found</div>`}
+    <div class="card-content">
+      <div class="card-headline">
+        <div>
+          <p class="label">Your Current Card</p>
+          <h2>${escapeHtml(card.name)}</h2>
+          <p class="subtle">${escapeHtml(card.role)}</p>
+        </div>
+        <div class="card-badge">Top Card</div>
       </div>
-      <div class="card-badge">Top Card</div>
+      <div class="inline-attributes">
+        ${ATTRIBUTES.map((attribute) => buildAttributeButton(card, attribute, canPick)).join("")}
+      </div>
     </div>
+  `;
+
+  elements.selfCard.querySelectorAll("[data-attribute]").forEach((button) => {
+    button.addEventListener("click", () => selectAttribute(button.dataset.attribute));
+  });
+}
+
+function buildAttributeButton(card, attribute, canPick) {
+  const isSelected = session.selectedAttributeKey === attribute.key;
+  const value = formatStat(card[attribute.key]);
+  return `
+    <button
+      type="button"
+      class="attribute-chip ${isSelected ? "selected-property" : ""}"
+      data-attribute="${attribute.key}"
+      ${canPick ? "" : "disabled"}
+    >
+      <span class="attribute-label">${escapeHtml(attribute.label)}</span>
+      <span class="attribute-value">${escapeHtml(value)}</span>
+    </button>
   `;
 }
 
-function renderLastRound(lastRound) {
-  if (!lastRound) {
-    elements.lastRoundPanel.innerHTML = "<p>No round played yet.</p>";
-    elements.lastRoundPanel.className = "last-round-panel";
+function renderRoundOverlay(lastRound) {
+  if (!lastRound || !session.pendingNext) {
+    elements.roundOverlay.classList.remove("overlay-active");
+    elements.roundOverlay.setAttribute("aria-hidden", "true");
     return;
   }
 
-  elements.lastRoundPanel.className = `last-round-panel ${session.revealActive ? "round-reveal-active" : ""}`;
-  elements.lastRoundPanel.innerHTML = `
-    <p>${escapeHtml(lastRound.message)}</p>
-    <div class="reveal-grid">
-      ${buildRevealMarkup(lastRound.selfCard, "Your round card", lastRound.attributeKey, getRevealOutcome(lastRound, "self"), true)}
-      ${buildRevealMarkup(lastRound.opponentCard, "Opponent round card", lastRound.attributeKey, getRevealOutcome(lastRound, "opponent"), true)}
-    </div>
+  elements.overlayTitle.textContent = session.state?.status === "finished" ? "Match Result" : "Round Result";
+  elements.overlayMessage.textContent = lastRound.message;
+  elements.overlayCards.innerHTML = `
+    ${buildRevealMarkup(lastRound.selfCard, "Your card", lastRound.attributeKey, getRevealOutcome(lastRound, "self"))}
+    ${buildRevealMarkup(lastRound.opponentCard, "Opponent card", lastRound.attributeKey, getRevealOutcome(lastRound, "opponent"))}
   `;
+  elements.nextRoundBtn.textContent = session.state?.status === "finished" ? "Close Result" : "Next Round";
+  elements.roundOverlay.classList.add("overlay-active");
+  elements.roundOverlay.setAttribute("aria-hidden", "false");
 }
 
-function buildRevealMarkup(card, label, attributeKey, outcome, shouldFlip) {
+function buildRevealMarkup(card, label, attributeKey, outcome) {
   if (!card) {
-    return '<div class="reveal-card"><p>No card data available.</p></div>';
+    return `<article class="reveal-card"><p>No card data available.</p></article>`;
   }
 
-  const imageMarkup = card.image
-    ? `<img src="${escapeHtml(card.image)}" alt="${escapeHtml(card.name)}" />`
-    : `<div class="card-image card-image-fallback">Photo not found</div>`;
-  const frontFace = `
-    <div class="reveal-face reveal-face-front">
-      <div class="reveal-card-backdrop"></div>
-      <p class="label">Hidden card</p>
-      <h4>Reveal</h4>
-    </div>
-  `;
-  const backFace = `
-    <div class="reveal-face reveal-face-back">
-      <div class="reveal-burst"></div>
-      ${imageMarkup}
-      <p class="label">${escapeHtml(label)}</p>
-      <h4>${escapeHtml(card.name)}</h4>
-      <p class="muted">${escapeHtml(card.role)}</p>
-      <p class="reveal-stat ${session.selectedAttributeKey === attributeKey ? "reveal-stat-active" : ""}">
-        <strong>${escapeHtml(getAttributeLabel(attributeKey))}:</strong> ${formatStat(card[attributeKey])}
-      </p>
-    </div>
-  `;
-
   return `
-    <article class="reveal-card reveal-${escapeHtml(outcome)} ${shouldFlip ? "reveal-card-flip" : ""}">
-      <div class="reveal-card-inner ${shouldFlip ? "is-flipped" : ""}">
-        ${frontFace}
-        ${backFace}
+    <article class="reveal-card reveal-${escapeHtml(outcome)} reveal-card-flip">
+      <div class="reveal-card-inner is-flipped">
+        <div class="reveal-face reveal-face-front">
+          <div class="reveal-card-backdrop"></div>
+          <p class="label">Hidden card</p>
+          <h4>Reveal</h4>
+        </div>
+        <div class="reveal-face reveal-face-back">
+          <div class="reveal-burst"></div>
+          ${card.image ? `<img class="overlay-photo" src="${escapeHtml(card.image)}" alt="${escapeHtml(card.name)}" />` : `<div class="card-image card-image-fallback">Photo not found</div>`}
+          <p class="label">${escapeHtml(label)}</p>
+          <h3>${escapeHtml(card.name)}</h3>
+          <p class="subtle">${escapeHtml(card.role)}</p>
+          <p class="reveal-stat reveal-stat-active">
+            <strong>${escapeHtml(getAttributeLabel(attributeKey))}:</strong> ${formatStat(card[attributeKey])}
+          </p>
+        </div>
       </div>
     </article>
   `;
 }
 
-function renderHistory(history) {
-  elements.historyList.innerHTML = "";
-
-  if (!history?.length) {
-    elements.historyList.innerHTML = "<li>No rounds played yet.</li>";
+function handleRoundTransition(state) {
+  const roundKey = getRoundKey(state.lastRound);
+  if (!roundKey || roundKey === session.lastResolvedRoundKey) {
     return;
   }
 
-  history.forEach((entry) => {
-    const item = document.createElement("li");
-    item.textContent = entry;
-    elements.historyList.appendChild(item);
-  });
+  session.lastResolvedRoundKey = roundKey;
+  session.selectedAttributeKey = state.lastRound.attributeKey;
+  session.revealActive = true;
+  session.pendingNext = true;
+  playRoundSound(state.lastRound);
 }
 
-function updateControls(state, card) {
+function getDisplayedSelfCard() {
+  if (session.pendingNext && session.state?.lastRound?.selfCard) {
+    return session.state.lastRound.selfCard;
+  }
+  return session.state?.self?.card || null;
+}
+
+function updateLobbyControls(state) {
   const canCreateOrJoin = !session.token;
   elements.createRoomBtn.disabled = !canCreateOrJoin;
   elements.joinRoomBtn.disabled = !canCreateOrJoin;
   elements.leaveRoomBtn.disabled = !session.token;
   elements.startMatchBtn.disabled = !state || !state.canStart;
-
-  const canPickAttribute = Boolean(
-    state && state.status === "active" && state.isYourTurn && !session.revealActive
-  );
-  elements.attributeButtons.querySelectorAll("button").forEach((button, index) => {
-    button.disabled = !canPickAttribute;
-    const attribute = ATTRIBUTES[index];
-    const value = card ? formatStat(card[attribute.key]) : "--";
-    button.classList.toggle("selected-property", session.selectedAttributeKey === attribute.key);
-    button.innerHTML = `
-      <span class="attribute-label">${escapeHtml(attribute.label)}</span>
-      <span class="attribute-value">${escapeHtml(value)}</span>
-    `;
-  });
+  elements.nextRoundBtn.disabled = !session.pendingNext;
 }
 
 function getTurnMessage(state) {
   if (state.status === "waiting") {
     return "Waiting for both players to join";
   }
-
   if (state.status === "finished") {
     return `${state.winnerName} won the match`;
   }
-
-  if (session.revealActive && state.lastRound) {
-    return "Round revealed. Preparing the next turn...";
+  if (session.pendingNext) {
+    return "Round complete. Reveal both cards and continue.";
   }
-
-  return state.isYourTurn ? "Your turn to choose a stat" : `${state.opponent.name} is choosing a stat`;
+  return state.isYourTurn ? "Tap one stat on your card" : `${state.opponent.name} is choosing a stat`;
 }
 
 function getAttributeLabel(attributeKey) {
   return ATTRIBUTES.find((attribute) => attribute.key === attributeKey)?.label || attributeKey;
+}
+
+function getRoundKey(lastRound) {
+  if (!lastRound) {
+    return "";
+  }
+  return [lastRound.attributeKey, lastRound.message, lastRound.selfCard?.name || "", lastRound.opponentCard?.name || ""].join("|");
+}
+
+function getRevealOutcome(lastRound, side) {
+  if (!lastRound || lastRound.winnerSide === "tie") {
+    return "tie";
+  }
+  return lastRound.winnerSide === side ? "winner" : "loser";
+}
+
+function playRoundSound(lastRound) {
+  if (!lastRound) {
+    return;
+  }
+
+  const outcome = getRevealOutcome(lastRound, "self");
+  if (outcome === "winner") {
+    playVictorySound();
+  } else if (outcome === "loser") {
+    playDefeatSound();
+  }
+}
+
+function playVictorySound() {
+  const ctx = getAudioContext();
+  if (!ctx) {
+    return;
+  }
+  const now = ctx.currentTime;
+  playTone(ctx, 523.25, now, 0.12, "triangle", 0.07);
+  playTone(ctx, 659.25, now + 0.1, 0.12, "triangle", 0.08);
+  playTone(ctx, 783.99, now + 0.2, 0.18, "triangle", 0.09);
+  playTone(ctx, 1046.5, now + 0.32, 0.24, "triangle", 0.1);
+  playTone(ctx, 1318.51, now + 0.46, 0.3, "triangle", 0.08);
+}
+
+function playDefeatSound() {
+  const ctx = getAudioContext();
+  if (!ctx) {
+    return;
+  }
+  const now = ctx.currentTime;
+  playTone(ctx, 260.0, now, 0.14, "sine", 0.04);
+  playTone(ctx, 196.0, now + 0.12, 0.22, "sine", 0.05);
+}
+
+function getAudioContext() {
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  if (!Ctor) {
+    return null;
+  }
+  if (!audioContext) {
+    audioContext = new Ctor();
+  }
+  if (audioContext.state === "suspended") {
+    audioContext.resume().catch(() => {});
+  }
+  return audioContext;
+}
+
+function playTone(ctx, frequency, startAt, duration, type, gainValue) {
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, startAt);
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(gainValue, startAt + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+  oscillator.connect(gain);
+  gain.connect(ctx.destination);
+  oscillator.start(startAt);
+  oscillator.stop(startAt + duration + 0.03);
 }
 
 function formatStat(value) {
@@ -446,145 +534,4 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
-}
-
-function handleRoundTransition(state) {
-  const roundKey = getRoundKey(state.lastRound);
-
-  if (!roundKey) {
-    session.revealActive = false;
-    session.lastResolvedRoundKey = "";
-    return;
-  }
-
-  if (roundKey === session.lastResolvedRoundKey) {
-    return;
-  }
-
-  session.lastResolvedRoundKey = roundKey;
-  session.selectedAttributeKey = state.lastRound.attributeKey;
-  session.revealActive = true;
-  playRoundSound(state.lastRound);
-  clearRevealTimer();
-  session.revealTimerId = window.setTimeout(() => {
-    session.revealActive = false;
-    session.selectedAttributeKey = "";
-    if (session.state) {
-      renderState(session.state);
-    }
-  }, 1800);
-}
-
-function clearRevealTimer() {
-  if (session.revealTimerId) {
-    window.clearTimeout(session.revealTimerId);
-    session.revealTimerId = null;
-  }
-}
-
-function getRoundKey(lastRound) {
-  if (!lastRound) {
-    return "";
-  }
-
-  return [
-    lastRound.attributeKey,
-    lastRound.message,
-    lastRound.selfCard?.name || "",
-    lastRound.opponentCard?.name || "",
-  ].join("|");
-}
-
-function getDisplayedSelfCard() {
-  if (session.revealActive && session.state?.lastRound?.selfCard) {
-    return session.state.lastRound.selfCard;
-  }
-
-  return session.state?.self?.card || null;
-}
-
-function getRevealOutcome(lastRound, side) {
-  if (!lastRound || lastRound.winnerSide === "tie") {
-    return "tie";
-  }
-
-  if (lastRound.winnerSide === side) {
-    return "winner";
-  }
-
-  return "loser";
-}
-
-function playRoundSound(lastRound) {
-  if (!lastRound) {
-    return;
-  }
-
-  const outcome = getRevealOutcome(lastRound, "self");
-  if (outcome === "winner") {
-    playVictorySound();
-    return;
-  }
-
-  if (outcome === "loser") {
-    playDefeatSound();
-  }
-}
-
-function playVictorySound() {
-  const ctx = getAudioContext();
-  if (!ctx) {
-    return;
-  }
-
-  const now = ctx.currentTime;
-  playTone(ctx, 523.25, now, 0.12, "triangle", 0.07);
-  playTone(ctx, 659.25, now + 0.11, 0.12, "triangle", 0.08);
-  playTone(ctx, 783.99, now + 0.22, 0.18, "triangle", 0.09);
-  playTone(ctx, 1046.5, now + 0.34, 0.24, "triangle", 0.1);
-  playTone(ctx, 1318.51, now + 0.48, 0.28, "triangle", 0.08);
-}
-
-function playDefeatSound() {
-  const ctx = getAudioContext();
-  if (!ctx) {
-    return;
-  }
-
-  const now = ctx.currentTime;
-  playTone(ctx, 260.0, now, 0.14, "sine", 0.04);
-  playTone(ctx, 196.0, now + 0.12, 0.22, "sine", 0.05);
-}
-
-function getAudioContext() {
-  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextCtor) {
-    return null;
-  }
-
-  if (!audioContext) {
-    audioContext = new AudioContextCtor();
-  }
-
-  if (audioContext.state === "suspended") {
-    audioContext.resume().catch(() => {});
-  }
-
-  return audioContext;
-}
-
-function playTone(ctx, frequency, startAt, duration, type, gainValue) {
-  const oscillator = ctx.createOscillator();
-  const gain = ctx.createGain();
-
-  oscillator.type = type;
-  oscillator.frequency.setValueAtTime(frequency, startAt);
-  gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(gainValue, startAt + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
-
-  oscillator.connect(gain);
-  gain.connect(ctx.destination);
-  oscillator.start(startAt);
-  oscillator.stop(startAt + duration + 0.03);
 }
