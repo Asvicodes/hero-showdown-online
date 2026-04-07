@@ -31,6 +31,7 @@ const elements = {
   roundOverlay: document.getElementById("roundOverlay"),
   overlayTitle: document.getElementById("overlayTitle"),
   overlayMessage: document.getElementById("overlayMessage"),
+  overlayCelebration: document.getElementById("overlayCelebration"),
   overlayCards: document.getElementById("overlayCards"),
 };
 
@@ -79,6 +80,7 @@ function getPlayerName() {
 }
 
 async function createRoom() {
+  unlockAudio();
   const response = await postJson("/api/rooms/create", { playerName: getPlayerName() });
   if (!response.ok) {
     setStatus(response.error || "Could not create room.");
@@ -92,6 +94,7 @@ async function createRoom() {
 }
 
 async function joinRoom() {
+  unlockAudio();
   const roomCode = elements.roomCodeInput.value.trim().toUpperCase();
   if (!roomCode) {
     setStatus("Enter a room code first.");
@@ -114,6 +117,7 @@ async function joinRoom() {
 }
 
 async function startMatch() {
+  unlockAudio();
   if (!session.token) {
     setStatus("Create or join a room first.");
     return;
@@ -133,6 +137,7 @@ async function startMatch() {
 }
 
 async function selectAttribute(attributeKey) {
+  unlockAudio();
   if (!session.token || !session.state || session.pendingNext) {
     return;
   }
@@ -157,6 +162,7 @@ async function selectAttribute(attributeKey) {
 }
 
 async function goToNextRound() {
+  unlockAudio();
   if (session.state?.status === "finished") {
     session.revealActive = false;
     session.pendingNext = false;
@@ -321,6 +327,9 @@ function renderDisconnectedView() {
   elements.selfCard.className = "player-card empty-card";
   elements.selfCard.innerHTML = "<p>Your active card will appear here.</p>";
   elements.roundOverlay.classList.remove("overlay-active");
+  elements.roundOverlay.classList.remove("overlay-finale");
+  elements.overlayCelebration.innerHTML = "";
+  elements.overlayCelebration.setAttribute("aria-hidden", "true");
   session.renderedOverlayRoundKey = "";
   session.nextRoundClicked = false;
   updateLobbyControls(null);
@@ -382,7 +391,10 @@ function buildAttributeButton(card, attribute, canPick) {
 function renderRoundOverlay(lastRound) {
   if (!lastRound || !session.pendingNext) {
     elements.roundOverlay.classList.remove("overlay-active");
+    elements.roundOverlay.classList.remove("overlay-finale");
     elements.roundOverlay.setAttribute("aria-hidden", "true");
+    elements.overlayCelebration.innerHTML = "";
+    elements.overlayCelebration.setAttribute("aria-hidden", "true");
     session.renderedOverlayRoundKey = "";
     return;
   }
@@ -399,6 +411,7 @@ function renderRoundOverlay(lastRound) {
     `;
     session.renderedOverlayRoundKey = roundKey;
   }
+  renderOverlayCelebration();
   if (session.state?.status === "finished") {
     elements.nextRoundBtn.textContent = "Close Result";
   } else if (session.state?.selfReadyNext) {
@@ -406,8 +419,33 @@ function renderRoundOverlay(lastRound) {
   } else {
     elements.nextRoundBtn.textContent = "Next Round";
   }
+  elements.roundOverlay.classList.toggle("overlay-finale", session.state?.status === "finished");
   elements.roundOverlay.classList.add("overlay-active");
   elements.roundOverlay.setAttribute("aria-hidden", "false");
+}
+
+function renderOverlayCelebration() {
+  const winnerName = session.state?.winnerName;
+  const isFinale = session.state?.status === "finished" && winnerName;
+  if (!isFinale) {
+    elements.overlayCelebration.innerHTML = "";
+    elements.overlayCelebration.setAttribute("aria-hidden", "true");
+    return;
+  }
+
+  const selfWon = session.state?.winnerName === session.state?.self?.name;
+  elements.overlayCelebration.innerHTML = `
+    <div class="winner-marquee ${selfWon ? "winner-marquee-self" : "winner-marquee-opponent"}">
+      <div class="winner-lightning winner-lightning-left"></div>
+      <div class="winner-lightning winner-lightning-right"></div>
+      <div class="winner-crackers winner-crackers-left"></div>
+      <div class="winner-crackers winner-crackers-right"></div>
+      <p class="label">Grand Finale</p>
+      <h2>${escapeHtml(winnerName)}</h2>
+      <p class="subtle">${selfWon ? "You conquered the deck." : "Match winner announced."}</p>
+    </div>
+  `;
+  elements.overlayCelebration.setAttribute("aria-hidden", "false");
 }
 
 function buildRevealMarkup(card, label, attributeKey, outcome, animateFlip) {
@@ -541,6 +579,15 @@ function playRoundSound(lastRound) {
   }
 
   const outcome = getRevealOutcome(lastRound, "self");
+  if (session.state?.status === "finished") {
+    if (outcome === "winner") {
+      playFinalVictorySound();
+    } else if (outcome === "loser") {
+      playFinalDefeatSound();
+    }
+    return;
+  }
+
   if (outcome === "winner") {
     playVictorySound();
   } else if (outcome === "loser") {
@@ -554,18 +601,15 @@ function playVictorySound() {
     return;
   }
   const now = ctx.currentTime;
-  playTone(ctx, 523.25, now, 0.12, "triangle", 0.06);
-  playTone(ctx, 659.25, now + 0.08, 0.12, "triangle", 0.07);
-  playTone(ctx, 783.99, now + 0.16, 0.16, "triangle", 0.08);
-  playTone(ctx, 1046.5, now + 0.28, 0.18, "triangle", 0.1);
-  playTone(ctx, 1318.51, now + 0.38, 0.24, "triangle", 0.11);
-  playTone(ctx, 1567.98, now + 0.48, 0.28, "triangle", 0.08);
-  playTone(ctx, 2093.0, now + 0.58, 0.3, "sine", 0.05);
-  playNoiseBurst(ctx, now + 0.12, 0.12, 0.03);
-  playNoiseBurst(ctx, now + 0.32, 0.12, 0.025);
-  playNoiseBurst(ctx, now + 0.52, 0.14, 0.02);
-  playBassHit(ctx, 130.81, now, 0.18, 0.045);
-  playBassHit(ctx, 164.81, now + 0.2, 0.18, 0.04);
+  playBassHit(ctx, 130.81, now, 0.22, 0.09);
+  playTone(ctx, 523.25, now, 0.14, "square", 0.12);
+  playTone(ctx, 659.25, now + 0.1, 0.14, "square", 0.13);
+  playTone(ctx, 783.99, now + 0.2, 0.18, "triangle", 0.15);
+  playTone(ctx, 1046.5, now + 0.34, 0.22, "triangle", 0.16);
+  playTone(ctx, 1318.51, now + 0.5, 0.28, "sawtooth", 0.12);
+  playNoiseBurst(ctx, now + 0.12, 0.16, 0.08);
+  playNoiseBurst(ctx, now + 0.34, 0.18, 0.07);
+  playNoiseBurst(ctx, now + 0.58, 0.18, 0.06);
 }
 
 function playDefeatSound() {
@@ -574,10 +618,44 @@ function playDefeatSound() {
     return;
   }
   const now = ctx.currentTime;
-  playTone(ctx, 261.63, now, 0.1, "sine", 0.035);
-  playTone(ctx, 220.0, now + 0.1, 0.12, "sine", 0.04);
-  playTone(ctx, 174.61, now + 0.22, 0.26, "sawtooth", 0.035);
-  playBassHit(ctx, 87.31, now + 0.18, 0.3, 0.03);
+  playTone(ctx, 261.63, now, 0.14, "square", 0.07);
+  playTone(ctx, 220.0, now + 0.14, 0.16, "sawtooth", 0.08);
+  playTone(ctx, 174.61, now + 0.3, 0.32, "sawtooth", 0.08);
+  playBassHit(ctx, 87.31, now + 0.16, 0.36, 0.06);
+  playNoiseBurst(ctx, now + 0.22, 0.18, 0.025);
+}
+
+function playFinalVictorySound() {
+  const ctx = getAudioContext();
+  if (!ctx) {
+    return;
+  }
+  const now = ctx.currentTime;
+  playBassHit(ctx, 130.81, now, 0.26, 0.11);
+  playTone(ctx, 523.25, now, 0.18, "square", 0.14);
+  playTone(ctx, 659.25, now + 0.12, 0.18, "square", 0.15);
+  playTone(ctx, 783.99, now + 0.24, 0.2, "triangle", 0.17);
+  playTone(ctx, 1046.5, now + 0.4, 0.24, "triangle", 0.18);
+  playTone(ctx, 1318.51, now + 0.56, 0.26, "triangle", 0.16);
+  playTone(ctx, 1567.98, now + 0.72, 0.32, "sawtooth", 0.15);
+  playTone(ctx, 2093, now + 0.92, 0.36, "sine", 0.12);
+  playNoiseBurst(ctx, now + 0.16, 0.18, 0.09);
+  playNoiseBurst(ctx, now + 0.46, 0.2, 0.085);
+  playNoiseBurst(ctx, now + 0.78, 0.22, 0.08);
+  playNoiseBurst(ctx, now + 1.02, 0.24, 0.075);
+}
+
+function playFinalDefeatSound() {
+  const ctx = getAudioContext();
+  if (!ctx) {
+    return;
+  }
+  const now = ctx.currentTime;
+  playTone(ctx, 220, now, 0.14, "square", 0.075);
+  playTone(ctx, 196, now + 0.16, 0.18, "sawtooth", 0.08);
+  playTone(ctx, 164.81, now + 0.34, 0.22, "sawtooth", 0.085);
+  playTone(ctx, 130.81, now + 0.56, 0.38, "triangle", 0.08);
+  playBassHit(ctx, 65.41, now + 0.32, 0.5, 0.075);
 }
 
 function getAudioContext() {
@@ -635,7 +713,7 @@ function playNoiseBurst(ctx, startAt, duration, gainValue) {
 
   source.buffer = buffer;
   filter.type = "highpass";
-  filter.frequency.setValueAtTime(1200, startAt);
+  filter.frequency.setValueAtTime(1500, startAt);
   gain.gain.setValueAtTime(gainValue, startAt);
   gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
 
