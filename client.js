@@ -90,7 +90,7 @@ async function createRoom() {
   setSession(response.roomCode, response.token);
   elements.roomCodeInput.value = response.roomCode;
   setStatus(`Room ${response.roomCode} created. Share this code with the other player.`);
-  await refreshState();
+  await refreshState(true);
 }
 
 async function joinRoom() {
@@ -113,7 +113,7 @@ async function joinRoom() {
 
   setSession(response.roomCode, response.token);
   setStatus(`Joined room ${response.roomCode}. Waiting for the host to start.`);
-  await refreshState();
+  await refreshState(true);
 }
 
 async function startMatch() {
@@ -133,7 +133,7 @@ async function startMatch() {
     return;
   }
 
-  await refreshState();
+  await refreshState(true);
 }
 
 async function selectAttribute(attributeKey) {
@@ -158,7 +158,7 @@ async function selectAttribute(attributeKey) {
     return;
   }
 
-  await refreshState();
+  await refreshState(true);
 }
 
 async function goToNextRound() {
@@ -191,7 +191,7 @@ async function goToNextRound() {
     return;
   }
 
-  await refreshState();
+  await refreshState(true);
 }
 
 function leaveRoom() {
@@ -253,10 +253,10 @@ function startPolling() {
   }
 
   session.pollId = window.setInterval(refreshState, 1500);
-  refreshState();
+  refreshState(false);
 }
 
-async function refreshState() {
+async function refreshState(isUserInitiated = false) {
   if (!session.roomCode || !session.token) {
     return;
   }
@@ -278,7 +278,11 @@ async function refreshState() {
     session.state = state;
     renderState(state);
   } catch (error) {
-    setStatus("Trying to reconnect to the local game server...");
+    if (isUserInitiated) {
+      setStatus("The room was created, but the app could not refresh the latest game state. Please try once more.");
+    } else {
+      setStatus("Trying to reconnect to the game server...");
+    }
   }
 }
 
@@ -784,7 +788,7 @@ async function postJson(url, payload) {
     const data = await response.json();
     return { ok: response.ok, ...data };
   } catch (error) {
-    return { ok: false, error: "The app could not reach the local game server." };
+    return { ok: false, error: "The app could not reach the game server." };
   }
 }
 
